@@ -140,7 +140,7 @@ $IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp --sport 25 -m state --state ESTABLI
 $IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp --dport 143 -m state --state NEW,ESTABLISHED -j ACCEPT
 $IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp --sport 143 -m state --state ESTABLISHED -j ACCEPT
 
-# Accept explicit connections to required targers
+# Accept explicit connections to required targets
 $IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp -d $LINUX_REPO --dport 80 -m state --state NEW,ESTABLISHED -j ACCEPT
 $IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp --sport 80 -m state --state ESTABLISHED -j ACCEPT
 
