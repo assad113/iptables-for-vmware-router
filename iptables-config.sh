@@ -16,12 +16,22 @@ IPTABLES_FILE="/etc/iptables/rules.v4"
 MODPROBE=$(which modprobe)
 
 BIND_INTERFACE=$(route | grep '^default' | grep -o '[^ ]*$')
+INT_INTERFACE1=
+INT_INTERFACE2=
+
+# White listed Clumio source IP address
 SOURCE_NETWORK="172.13.15.0/20"
 
-### Custom config ###
+#
+VMWARE_CLUSTER_PUBLIC_IP="130.59.113.36"
 
-# Linux repo (mirror.switch.ch)
-LINUX_REPO="130.59.113.36"
+########################################################################
+# Saving Current firewall Rules
+########################################################################
+
+printf "Saving current firewall Rules ...\n"
+$IPTABLES_SAVE > /root/iptables-works-`date +%F`
+#If you do something that prevents your system from working, you can quickly restore it: iptables-restore < /root/iptables-works-2018-09-11
 
 ########################################################################
 # Initialize firewall
@@ -112,6 +122,12 @@ printf "Setting up firewall rules ...\n"
 $IPTABLES -A INPUT -i lo -j ACCEPT
 $IPTABLES -A OUTPUT -o lo -j ACCEPT
 
+# Accept all traffic from internal Interfaces
+$IPTABLES -A INPUT -i INT_INTERFACE1 -j ACCEPT
+$IPTABLES -A OUTPUT -o INT_INTERFACE1 -j ACCEPT
+$IPTABLES -A INPUT -i INT_INTERFACE2 -j ACCEPT
+$IPTABLES -A OUTPUT -o INT_INTERFACE2 -j ACCEPT
+
 # Accept all established or related inbound connections
 $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
@@ -123,26 +139,30 @@ $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 # Accept all inbound and outbound ICMP packets (e.g. ping)
 $IPTABLES -A INPUT -i $BIND_INTERFACE -p icmp -j ACCEPT
 $IPTABLES -A OUTPUT -o $BIND_INTERFACE -p icmp -j ACCEPT
+$IPTABLES -A FORWARD -p icmp -j ACCEPT
 
-# Accept incoming SSH connections only from a specific network
-$IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp -s $SOURCE_NETWORK --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
-$IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+# Accept incoming connections only from a White listed Clumio Source IP
+$IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp -s $SOURCE_NETWORK -m state --state NEW,ESTABLISHED -j ACCEPT
+$IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp -m state --state ESTABLISHED -j ACCEPT
+$IPTABLES -A FORWARD -i $BIND_INTERFACE -p tcp -s $SOURCE_NETWORK -m state --state NEW,ESTABLISHED -j ACCEPT
+$IPTABLES -A FORWARD -o $BIND_INTERFACE -m state --state NEW,ESTABLISHED -j ACCEPT
+$IPTABLES -A FORWARD -m conntrack --ctstate INVALID -j DROP
 
 # Accept all outbound DNS connections
 $IPTABLES -A OUTPUT -o $BIND_INTERFACE -p udp --dport 53 -j ACCEPT
 $IPTABLES -A INPUT -i $BIND_INTERFACE -p udp --sport 53 -j ACCEPT
-
-# Accept all outbound STMP connections
-$IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp --dport 25 -m state --state NEW,ESTABLISHED -j ACCEPT
-$IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp --sport 25 -m state --state ESTABLISHED -j ACCEPT
-
-# Accept all outbound IMAP connections
-$IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp --dport 143 -m state --state NEW,ESTABLISHED -j ACCEPT
-$IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp --sport 143 -m state --state ESTABLISHED -j ACCEPT
+# for VPN
+$IPTABLES -A INPUT -p udp -m multiport --dports 500,4500 -j ACCEPT
+$IPTABLES -A INPUT -p udp -m udp --dport 1701 -m policy --dir in --pol ipsec -j ACCEPT
+$IPTABLES -A FORWARD -i bond0 -o ppp+ -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+$IPTABLES -A FORWARD -i ppp+ -o bond0 -j ACCEPT
+$IPTABLES -A FORWARD -s 192.168.42.0/24 -d 192.168.42.0/24 -i ppp+ -o ppp+ -j ACCEPT
+$IPTABLES -A FORWARD -d 192.168.43.0/24 -i bond0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+$IPTABLES -A FORWARD -s 192.168.43.0/24 -o bond0 -j ACCEPT
 
 # Accept explicit connections to required targets
-$IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp -d $LINUX_REPO --dport 80 -m state --state NEW,ESTABLISHED -j ACCEPT
-$IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp --sport 80 -m state --state ESTABLISHED -j ACCEPT
+#$IPTABLES -A OUTPUT -o $BIND_INTERFACE -p tcp -d $VMWARE_CLUSTER_PUBLIC_IP --dport 80 -m state --state NEW,ESTABLISHED -j ACCEPT
+#$IPTABLES -A INPUT -i $BIND_INTERFACE -p tcp --sport 80 -m state --state ESTABLISHED -j ACCEPT
 
 printf "Firewall is now configured and active!\n"
 
